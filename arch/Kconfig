@@ -133,6 +133,7 @@ config SANDBOX
 	imply PHYLIB
 	imply DM_MDIO
 	imply DM_MDIO_MUX
+	imply DM_DSA
 	imply ACPI_PMC
 	imply ACPI_PMC_SANDBOX
 	imply CMD_PMC
