@@ -11,9 +11,10 @@
 #include <fsl_mdio.h>
 #include <asm/io.h>
 #include <linux/errno.h>
+#include <tsec.h>
 
 void tsec_local_mdio_write(struct tsec_mii_mng __iomem *phyregs, int port_addr,
-		int dev_addr, int regnum, int value)
+			   int dev_addr, int regnum, int value)
 {
 	int timeout = 1000000;
 
@@ -27,10 +28,10 @@ void tsec_local_mdio_write(struct tsec_mii_mng __iomem *phyregs, int port_addr,
 }
 
 int tsec_local_mdio_read(struct tsec_mii_mng __iomem *phyregs, int port_addr,
-		int dev_addr, int regnum)
+			 int dev_addr, int regnum)
 {
-	int value;
 	int timeout = 1000000;
+	int value;
 
 	/* Put the address of the phy, and the register number into MIIMADD */
 	out_be32(&phyregs->miimadd, (port_addr << 8) | (regnum & 0x1f));
@@ -56,41 +57,49 @@ int tsec_local_mdio_read(struct tsec_mii_mng __iomem *phyregs, int port_addr,
 	return value;
 }
 
-static int fsl_pq_mdio_reset(struct mii_dev *bus)
+int tsec_local_mdio_reset(struct tsec_mii_mng __iomem *phyregs)
 {
-	struct tsec_mii_mng __iomem *regs =
-		(struct tsec_mii_mng __iomem *)bus->priv;
-
 	/* Reset MII (due to new addresses) */
-	out_be32(&regs->miimcfg, MIIMCFG_RESET_MGMT);
+	out_be32(&phyregs->miimcfg, MIIMCFG_RESET_MGMT);
 
-	out_be32(&regs->miimcfg, MIIMCFG_INIT_VALUE);
+	out_be32(&phyregs->miimcfg, MIIMCFG_INIT_VALUE);
 
-	while (in_be32(&regs->miimind) & MIIMIND_BUSY)
+	while (in_be32(&phyregs->miimind) & MIIMIND_BUSY)
 		;
 
 	return 0;
 }
 
-int tsec_phy_read(struct mii_dev *bus, int addr, int dev_addr, int regnum)
+static int dm_fsl_pq_mdio_read(struct udevice *dev, int addr, int devad,
+			       int reg)
 {
-	struct tsec_mii_mng __iomem *phyregs =
-		(struct tsec_mii_mng __iomem *)bus->priv;
+	struct fsl_pq_mdio_info *info = dev_get_priv(dev);
 
-	return tsec_local_mdio_read(phyregs, addr, dev_addr, regnum);
+	return tsec_local_mdio_read(info->regs, addr, devad, reg);
 }
 
-int tsec_phy_write(struct mii_dev *bus, int addr, int dev_addr, int regnum,
-			u16 value)
+static int dm_fsl_pq_mdio_write(struct udevice *dev, int addr, int devad,
+				int reg, u16 val)
 {
-	struct tsec_mii_mng __iomem *phyregs =
-		(struct tsec_mii_mng __iomem *)bus->priv;
+	struct fsl_pq_mdio_info *info = dev_get_priv(dev);
 
-	tsec_local_mdio_write(phyregs, addr, dev_addr, regnum, value);
+	tsec_local_mdio_write(info->regs, addr, devad, reg, val);
 
 	return 0;
 }
 
+static int fsl_pq_mdio_probe(struct udevice *dev)
+{
+	struct fsl_pq_mdio_info *info = dev_get_priv(dev);
+	fdt_addr_t reg;
+
+	reg = devfdt_get_addr(dev);
+	info->regs = (void __iomem *)(reg + TSEC_MDIO_REGS_OFFSET);
+
+	return tsec_local_mdio_reset(info->regs);
+}
+
+#if 0
 int fsl_pq_mdio_init(bd_t *bis, struct fsl_pq_mdio_info *info)
 {
 	struct mii_dev *bus = mdio_alloc();
@@ -109,3 +118,23 @@ int fsl_pq_mdio_init(bd_t *bis, struct fsl_pq_mdio_info *info)
 
 	return mdio_register(bus);
 }
+#endif
+
+static const struct mdio_ops fsl_pq_mdio_ops = {
+	.read			= dm_fsl_pq_mdio_read,
+	.write			= dm_fsl_pq_mdio_write,
+};
+
+static const struct udevice_id fsl_pq_mdio_ids[] = {
+	{ .compatible = "fsl,etsec2-mdio" },
+	{ }
+};
+
+U_BOOT_DRIVER(fsl_pq_mdio) = {
+	.name			= "fsl_pq_mdio",
+	.id			= UCLASS_MDIO,
+	.of_match		= fsl_pq_mdio_ids,
+	.probe			= fsl_pq_mdio_probe,
+	.ops			= &fsl_pq_mdio_ops,
+	.priv_auto_alloc_size	= sizeof(struct fsl_pq_mdio_info),
+};
