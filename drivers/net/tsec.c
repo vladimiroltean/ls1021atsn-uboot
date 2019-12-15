@@ -543,6 +543,9 @@ static void startup_tsec(struct tsec_private *priv)
 	out_be32(&regs->tstat, TSTAT_CLEAR_THALT);
 	out_be32(&regs->rstat, RSTAT_CLEAR_RHALT);
 	clrbits_be32(&regs->dmactrl, DMACTRL_GRS | DMACTRL_GTS);
+
+	/* Enable promiscuous mode */
+	setbits_be32(&priv->regs->rctrl, 0x8);
 }
 
 /*
